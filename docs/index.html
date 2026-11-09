@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Vorstalarm</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f2f5f8; --card:#fff; --text:#14232f; --muted:#5a6b78; --line:#d5dee5; --accent:#0b62a4; --good:#17703f; --bad:#b3261e; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f171e; --card:#1a252e; --text:#e8eef3; --muted:#9aabb8; --line:#33434f; --accent:#69b4ec; --good:#6fd39b; --bad:#ff8f87; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:17px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  main { max-width:520px; margin:auto; padding:20px 16px 48px; }
+  h1 { font-size:28px; margin:8px 0 16px; }
+  h2 { font-size:17px; margin:0 0 12px; }
+  section { background:var(--card); border-radius:14px; padding:16px; margin-bottom:14px; }
+  label { display:block; font-size:15px; color:var(--muted); margin:12px 0 4px; }
+  input,select { width:100%; font-size:17px; padding:11px; border:1px solid var(--line); border-radius:9px; background:transparent; color:var(--text); }
+  button { font-size:17px; font-weight:600; min-height:46px; padding:0 16px; border:0; border-radius:10px; background:var(--accent); color:var(--card); width:100%; margin-top:14px; }
+  button.plain { background:transparent; color:var(--accent); border:1px solid var(--line); font-weight:500; }
+  button:disabled { opacity:.5; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .muted { color:var(--muted); font-size:15px; margin:4px 0; }
+  .value { font-size:20px; font-weight:600; margin:0; }
+  #results button { background:transparent; color:var(--text); border-bottom:1px solid var(--line); border-radius:0; text-align:left; font-weight:400; margin:0; padding:9px 0; height:auto; }
+  #message { font-weight:600; margin:12px 0 0; min-height:1.4em; }
+  .ok { color:var(--good); } .err { color:var(--bad); }
+  summary { font-weight:600; min-height:28px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Vorstalarm</h1>
+
+  <section>
+    <h2>Huidige bewaking</h2>
+    <p class="value" id="current">Laden…</p>
+    <p class="muted" id="status"></p>
+  </section>
+
+  <section>
+    <h2>Locatie</h2>
+    <label for="search">Zoek een plaats</label>
+    <input id="search" type="search" placeholder="Bijvoorbeeld Yerseke" autocomplete="off">
+    <div id="results"></div>
+    <button class="plain" id="here" type="button">Gebruik mijn huidige locatie</button>
+    <label for="name">Naam in de meldingen</label>
+    <input id="name" maxlength="60">
+    <div class="row">
+      <div><label for="lat">Breedtegraad</label><input id="lat" inputmode="decimal"></div>
+      <div><label for="lon">Lengtegraad</label><input id="lon" inputmode="decimal"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Waarschuwing</h2>
+    <div class="row">
+      <div><label for="threshold">Onder (°C)</label><input id="threshold" inputmode="decimal"></div>
+      <div><label for="horizon">Vooruitkijken</label>
+        <select id="horizon"><option value="3">3 dagen</option><option value="5">5 dagen</option><option value="7">7 dagen</option><option value="10">10 dagen</option></select>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <details id="tokenbox">
+      <summary>Toegangscode</summary>
+      <p class="muted">Nodig om op te slaan. Blijft alleen op dit apparaat bewaard.</p>
+      <label for="token">GitHub-toegangscode</label>
+      <input id="token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </details>
+    <button id="save" type="button">Opslaan</button>
+    <p id="message" role="status"></p>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const repo = params.get("repo") || `${location.hostname.split(".")[0]}/${location.pathname.split("/")[1]}`;
+const api = `https://api.github.com/repos/${repo}/contents/`;
+const TOKEN_KEY = "vorstalarm-token";
+let configSha = null;
+
+function store(action, value) {
+  try {
+    if (action === "get") return localStorage.getItem(TOKEN_KEY) || "";
+    localStorage.setItem(TOKEN_KEY, value);
+  } catch { return ""; }
+}
+function say(text, kind) { $("message").textContent = text; $("message").className = kind || ""; }
+function number(text) { return Number(String(text).trim().replace(",", ".")); }
+function comma(value) { return String(value).replace(".", ","); }
+
+function decode(b64) {
+  const bytes = Uint8Array.from(atob(b64.replace(/\n/g, "")), c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+function encode(text) {
+  let binary = "";
+  new TextEncoder().encode(text).forEach(b => binary += String.fromCharCode(b));
+  return btoa(binary);
+}
+async function getFile(name) {
+  const token = store("get");
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const response = await fetch(api + name, { cache: "no-store", headers });
+  if (!response.ok) throw new Error(response.status);
+  const file = await response.json();
+  return { sha: file.sha, data: JSON.parse(decode(file.content)) };
+}
+
+function showConfig(cfg) {
+  $("current").textContent = cfg.name;
+  $("name").value = cfg.name;
+  $("lat").value = comma(cfg.latitude);
+  $("lon").value = comma(cfg.longitude);
+  $("threshold").value = comma(cfg.threshold);
+  $("horizon").value = String(cfg.horizon_days);
+  if (!$("horizon").value) {
+    const option = new Option(`${cfg.horizon_days} dagen`, cfg.horizon_days, true, true);
+    $("horizon").add(option);
+  }
+}
+
+async function load() {
+  try {
+    const config = await getFile("config.json");
+    configSha = config.sha;
+    showConfig(config.data);
+    $("status").textContent = `Waarschuwt onder ${comma(config.data.threshold)} °C, ${config.data.horizon_days} dagen vooruit.`;
+  } catch (error) {
+    $("current").textContent = "Niet beschikbaar";
+    say("De instellingen konden niet worden geladen.", "err");
+    return;
+  }
+  try {
+    const { data } = await getFile("state.json");
+    if (data.last_check) {
+      const when = new Date(data.last_check).toLocaleString("nl-NL", { weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" });
+      const low = data.last_lowest.toFixed(1).replace(".", ",");
+      const alarm = data.active ? "Vorstalarm actief. " : "";
+      $("status").textContent += ` ${alarm}Laatste controle: ${when}, laagste verwachting ${low} °C.`;
+    }
+  } catch { /* nog geen controle gedraaid */ }
+}
+
+let searchTimer;
+$("search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(search, 350);
+});
+async function search() {
+  const query = $("search").value.trim();
+  const list = $("results");
+  list.replaceChildren();
+  if (query.length < 2) return;
+  try {
+    const url = `https://geocoding-api.open-meteo.com/v1/search?count=6&language=nl&name=${encodeURIComponent(query)}`;
+    const { results = [] } = await (await fetch(url)).json();
+    if (!results.length) { list.textContent = "Niets gevonden."; return; }
+    for (const place of results) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = [place.name, place.admin1, place.country].filter(Boolean).join(", ");
+      button.onclick = () => {
+        $("name").value = place.name;
+        $("lat").value = comma(place.latitude);
+        $("lon").value = comma(place.longitude);
+        list.replaceChildren();
+        $("search").value = "";
+      };
+      list.append(button);
+    }
+  } catch { list.textContent = "Zoeken lukt nu niet."; }
+}
+
+$("here").onclick = () => {
+  if (!navigator.geolocation) return say("Locatie is niet beschikbaar op dit apparaat.", "err");
+  navigator.geolocation.getCurrentPosition(position => {
+    $("lat").value = comma(position.coords.latitude.toFixed(4));
+    $("lon").value = comma(position.coords.longitude.toFixed(4));
+    $("name").value = "";
+    $("name").focus();
+    say("Locatie overgenomen. Geef deze plek een naam.");
+  }, () => say("Je locatie kon niet worden bepaald.", "err"));
+};
+
+$("save").onclick = async () => {
+  const config = {
+    name: $("name").value.trim(),
+    latitude: number($("lat").value),
+    longitude: number($("lon").value),
+    threshold: number($("threshold").value),
+    horizon_days: Number($("horizon").value),
+  };
+  if (!config.name) return say("Geef de locatie een naam.", "err");
+  if (!(Math.abs(config.latitude) <= 90) || !(Math.abs(config.longitude) <= 180)) return say("De coördinaten kloppen niet.", "err");
+  if (!(config.threshold >= -20 && config.threshold <= 15)) return say("De drempel moet tussen -20 en 15 °C liggen.", "err");
+  const token = $("token").value.trim();
+  if (!token) { $("tokenbox").open = true; return say("Vul eerst je toegangscode in.", "err"); }
+
+  store("set", token);
+  $("save").disabled = true;
+  say("Opslaan…");
+  try {
+    configSha = (await getFile("config.json")).sha;
+    const response = await fetch(api + "config.json", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+      body: JSON.stringify({
+        message: "Instellingen gewijzigd",
+        content: encode(JSON.stringify(config, null, 2) + "\n"),
+        sha: configSha,
+      }),
+    });
+    if (response.status === 401 || response.status === 403 || response.status === 404) throw new Error("token");
+    if (!response.ok) throw new Error("save");
+    configSha = (await response.json()).content.sha;
+    showConfig(config);
+    say("Opgeslagen. De nieuwe instellingen worden binnen enkele minuten gecontroleerd.", "ok");
+  } catch (error) {
+    if (error.message === "token") { $("tokenbox").open = true; say("De toegangscode wordt niet geaccepteerd.", "err"); }
+    else say("Opslaan is mislukt. Probeer het opnieuw.", "err");
+  } finally {
+    $("save").disabled = false;
+  }
+};
+
+$("token").value = store("get");
+load();
+</script>
+</body>
+</html>
