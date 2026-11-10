@@ -1,1 +1,12 @@
-{}
+{
+  "failure_notified": false,
+  "location": "51.6702,4.0854",
+  "active": true,
+  "clear_count": 0,
+  "alerted_first": "2026-11-15",
+  "alerted_min": 0.8,
+  "imminent_sent": false,
+  "last_check": "2026-11-10T11:05",
+  "last_lowest": 0.8,
+  "last_lowest_time": "2026-11-15T05:00"
+}
