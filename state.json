@@ -3,10 +3,10 @@
   "location": "51.6702,4.0854",
   "active": true,
   "clear_count": 0,
-  "alerted_first": "2026-11-23",
-  "alerted_min": -1.8,
+  "alerted_first": "2026-11-24",
+  "alerted_min": -3.0,
   "imminent_sent": false,
-  "last_check": "2026-11-21T08:08",
-  "last_lowest": -2.7,
-  "last_lowest_time": "2026-11-26T04:00"
+  "last_check": "2026-11-21T19:40",
+  "last_lowest": -3.0,
+  "last_lowest_time": "2026-11-26T06:00"
 }
