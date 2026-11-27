@@ -6,8 +6,8 @@
   "alerted_first": "2026-11-27",
   "alerted_min": -3.6,
   "imminent_sent": true,
-  "last_check": "2026-11-27T08:19",
-  "last_lowest": -3.6,
-  "last_lowest_time": "2026-11-27T10:00",
+  "last_check": "2026-11-27T19:54",
+  "last_lowest": -2.6,
+  "last_lowest_time": "2026-11-28T03:00",
   "last_heartbeat": "2026-11-23"
 }
